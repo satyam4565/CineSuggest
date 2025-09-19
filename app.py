@@ -6,6 +6,7 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 import pandas as pd
 import streamlit as st
+import requests
 from nltk.stem.porter import PorterStemmer
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -13,13 +14,13 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 warnings.filterwarnings('ignore')
 
-
 # ----------------------------
 # Data loading and processing
 # ----------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
 MOVIES_CSV = PROJECT_ROOT / 'tmdb_5000_movies.csv'
 CREDITS_CSV = PROJECT_ROOT / 'tmdb_5000_credits.csv'
+TMDB_API_KEY = '254ddecd1de46492bed4a759f654969c'
 
 
 def _convert_list_of_names(obj_str: str) -> List[str]:
@@ -112,6 +113,25 @@ def build_metadata(movies: pd.DataFrame, credits: pd.DataFrame) -> Dict[str, Dic
     return meta
 
 
+@st.cache_data(show_spinner=False)
+def fetch_tmdb_poster_url_by_id(movie_id: int) -> str | None:
+    if not TMDB_API_KEY:
+        return None
+    try:
+        url = f'https://api.themoviedb.org/3/movie/{movie_id}'
+        params = {'api_key': TMDB_API_KEY}
+        resp = requests.get(url, params=params, timeout=6)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        poster_path = data.get('poster_path')
+        if not poster_path:
+            return None
+        return f'https://image.tmdb.org/t/p/w342{poster_path}'
+    except Exception:
+        return None
+
+
 ps = PorterStemmer()
 
 
@@ -146,28 +166,37 @@ def get_recommendations(df: pd.DataFrame, similarity: np.ndarray, movie_title: s
 # ----------------------------
 # Streamlit UI
 # ----------------------------
-st.set_page_config(page_title='Movie Recommender', page_icon='🎬', layout='wide')
+st.set_page_config(page_title='CineSuggest', page_icon='🍿', layout='wide')
 
-# Minimal topbar styling
+# Global styles to match the provided design (dark, red accent, big hero)
 st.markdown(
     """
     <style>
-    .topbar {display:flex; gap: 12px; align-items:center; padding: 8px 0 16px 0;}
-    .brand {font-weight: 800; font-size: 1.4rem;}
-    .spacer {flex:1;}
+      .app-hero {text-align:center; padding-top: 8px; padding-bottom: 6px;}
+      .hero-title {font-size: 3rem; font-weight: 800; color: #e74c3c;}
+      .hero-sub {font-size: 1.5rem; color: #dcdcdc; margin-top: 8px;}
+      .controls {display:flex; align-items:center; gap:16px; justify-content:center; margin-top: 24px;}
+      .recommend-btn button {background:#e74c3c; color:white; border:none; padding: 14px 24px; font-size: 1.2rem; border-radius: 12px;}
+      .recommend-btn button:hover {filter: brightness(0.95);} 
+      .section-title {font-size: 2rem; font-weight: 800; margin: 8px 0 16px 0;}
+      /* Dark theme tweaks */
+      .stApp {background-color: #0f1116;}
+      .stSelectbox label, .stSlider label, .stMarkdown, .stTextInput label {color: #e6e6e6 !important;}
+      .stSlider {padding-top: 8px;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.markdown('<div class="topbar"><div class="brand">🎬 Movie Recommender</div><div class="spacer"></div></div>', unsafe_allow_html=True)
+st.markdown('<div class="app-hero">\n  <div class="hero-title">🍿 CineSuggest</div>\n  <div class="hero-sub">Discover movies tailored for you – with stunning posters 🎞️</div>\n</div>', unsafe_allow_html=True)
 
-# Controls row
-col_q, col_num = st.columns([3, 1])
-with col_q:
-    query = st.text_input('Search a movie', placeholder='e.g., Inception, Avatar, The Dark Knight')
-with col_num:
-    top_n = st.slider('Recommendations', min_value=3, max_value=20, value=5, step=1)
+# Controls (centered): selectbox + slider + recommend button
+ctrl1, ctrl2 = st.columns([2, 1])
+with ctrl1:
+    # Placeholder; will be populated after data loads
+    pass
+with ctrl2:
+    pass
 
 with st.spinner('Loading data and building model…'):
     movies_df, credits_df = load_raw_frames(Path(MOVIES_CSV), Path(CREDITS_CSV))
@@ -177,19 +206,25 @@ with st.spinner('Loading data and building model…'):
 
 titles = df['title'].tolist()
 
-selected_title = None
-if query:
-    q = query.lower().strip()
-    options = [t for t in titles if q in str(t).lower()]
-    if options:
-        selected_title = st.selectbox('Matching titles', options, index=0)
-    else:
-        st.warning('No matches found. Try another query.')
-else:
-    selected_title = st.selectbox('Pick from all titles', options=titles)
+# Rebuild controls with actual data
+with ctrl1:
+    selected_title = st.selectbox('Pick a movie', options=titles, index=titles.index('Shutter Island') if 'Shutter Island' in titles else 0)
+with ctrl2:
+    top_n = st.slider('📌 Number of Recommendations', min_value=3, max_value=30, value=5, step=1)
 
-if selected_title:
-    st.markdown('### Recommendations')
+trigger = st.session_state.get('do_recommend', False)
+recommend_clicked = st.container()
+with recommend_clicked:
+    st.markdown('<div class="controls">', unsafe_allow_html=True)
+    col_btn = st.columns([1])[0]
+    with col_btn:
+        if st.button('🌀 Recommend', use_container_width=True):
+            st.session_state['do_recommend'] = True
+            trigger = True
+    st.markdown('</div>', unsafe_allow_html=True)
+
+if selected_title and trigger:
+    st.markdown(f'<div class="section-title">✨ Top {top_n} Recommendations for {selected_title}</div>', unsafe_allow_html=True)
     recs = get_recommendations(df, similarity, selected_title, top_n=top_n)
     if not recs:
         st.info('No recommendations found for this selection.')
@@ -198,32 +233,41 @@ if selected_title:
         st.markdown(
             """
             <style>
-            .movie-card {border: 1px solid #eaeaea; border-radius: 12px; padding: 16px; background: #ffffff;
-                         box-shadow: 0 2px 8px rgba(0,0,0,0.04); height: 100%;}
-            .movie-title {font-weight: 700; font-size: 1.05rem; margin-bottom: 2px;}
-            .movie-meta {color: #666; font-size: 0.9rem; margin-bottom: 8px;}
-            .chips {display: flex; flex-wrap: wrap; gap: 6px;}
-            .chip {background: #f2f2f2; color: #333; border-radius: 999px; padding: 4px 10px; font-size: 0.8rem;}
+            .movie-card {border: 1px solid #0f1116; border-radius: 10px; background: #0f1116;
+                         box-shadow: 0 4px 16px rgba(0,0,0,0.25); height: 100%;}
+            .poster {width: 240px; height: 340px; object-fit: contain; border-top-left-radius: 16px; border-top-right-radius: 16px; background: #0f1116;}
+            .movie-title {font-weight: 800; font-size: 1.1rem; margin-top: 6px; color: #f0f0f0;}
+            .movie-year {color: #b5b5b5; font-size: 0.9rem;}
             </style>
             """,
             unsafe_allow_html=True,
         )
 
-        # Render in responsive columns
-        num_cols = 3
-        rows = [recs[i:i+num_cols] for i in range(0, len(recs), num_cols)]
+        # Show up to 12 posters, 3 per row
+        display_recs = recs[:30]
+        num_cols = 5
+        rows = [display_recs[i:i+num_cols] for i in range(0, len(display_recs), num_cols)]
         for row_titles in rows:
             cols = st.columns(len(row_titles))
             for col, title in zip(cols, row_titles):
                 info = meta_by_title.get(title, {})
-                genres = info.get('genres') or []
+                # Look up movie_id directly from the training df
+                try:
+                    movie_id_val = int(df[df['title'] == title]['movie_id'].iloc[0])
+                except Exception:
+                    movie_id_val = None
+                poster_url = fetch_tmdb_poster_url_by_id(movie_id_val) if movie_id_val is not None else None
                 with col:
                     st.markdown('<div class="movie-card">', unsafe_allow_html=True)
+                    if poster_url:
+                        st.markdown(f'<img class="poster" src="{poster_url}" alt="{title} poster" />', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div class="poster"></div>', unsafe_allow_html=True)
+                    st.markdown('<div class="card-body">', unsafe_allow_html=True)
                     st.markdown(f'<div class="movie-title">{title}</div>', unsafe_allow_html=True)
-                    # No extra metadata displayed per request
-                    if genres:
-                        chips_html = ''.join([f'<span class="chip">{g}</span>' for g in genres])
-                        st.markdown(f'<div class="chips">{chips_html}</div>', unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    year = info.get('year')
+                    if year:
+                        st.markdown(f'<div class="movie-year">({year})</div>', unsafe_allow_html=True)
+                    st.markdown('</div></div>', unsafe_allow_html=True)
 
 
