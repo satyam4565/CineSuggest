@@ -17,6 +17,7 @@ warnings.filterwarnings('ignore')
 # ----------------------------
 # Data loading and processing
 # ----------------------------
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 MOVIES_CSV = PROJECT_ROOT / 'tmdb_5000_movies.csv'
 CREDITS_CSV = PROJECT_ROOT / 'tmdb_5000_credits.csv'
@@ -90,11 +91,9 @@ def build_training_frame(movies: pd.DataFrame, credits: pd.DataFrame) -> pd.Data
 @st.cache_data(show_spinner=False)
 def build_metadata(movies: pd.DataFrame, credits: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
     merged = movies.merge(credits, on='title')
-    # Keep minimal metadata for UI
     meta = {}
     for _, row in merged.iterrows():
         title = row['title']
-        # Parse genres list for chips
         try:
             genres_list = [g['name'] for g in ast.literal_eval(row['genres'])]
         except Exception:
@@ -144,7 +143,6 @@ def _stem_text(text: str) -> str:
 
 @st.cache_resource(show_spinner=False)
 def build_vectorizer_and_matrix(df: pd.DataFrame):
-    # Like notebook: CountVectorizer(max_features=5000, stop_words='english') then stem
     cv = CountVectorizer(max_features=5000, stop_words='english')
     # Apply stemming to tags
     tags_stemmed = df['tags'].apply(_stem_text)
@@ -158,7 +156,6 @@ def get_recommendations(df: pd.DataFrame, similarity: np.ndarray, movie_title: s
         return []
     movie_index = df[df['title'] == movie_title].index[0]
     distances = similarity[movie_index]
-    # Skip the first (the same movie), then take top_n
     movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1: top_n + 1]
     return [df.iloc[i[0]].title for i in movies_list]
 
@@ -166,9 +163,9 @@ def get_recommendations(df: pd.DataFrame, similarity: np.ndarray, movie_title: s
 # ----------------------------
 # Streamlit UI
 # ----------------------------
+
 st.set_page_config(page_title='CineSuggest', page_icon='🍿', layout='wide')
 
-# Global styles to match the provided design (dark, red accent, big hero)
 st.markdown(
     """
     <style>
@@ -190,10 +187,8 @@ st.markdown(
 
 st.markdown('<div class="app-hero">\n  <div class="hero-title">🍿 CineSuggest</div>\n  <div class="hero-sub">Discover movies tailored for you – with stunning posters 🎞️</div>\n</div>', unsafe_allow_html=True)
 
-# Controls (centered): selectbox + slider + recommend button
 ctrl1, ctrl2 = st.columns([2, 1])
 with ctrl1:
-    # Placeholder; will be populated after data loads
     pass
 with ctrl2:
     pass
@@ -206,7 +201,6 @@ with st.spinner('Loading data and building model…'):
 
 titles = df['title'].tolist()
 
-# Rebuild controls with actual data
 with ctrl1:
     selected_title = st.selectbox('Pick a movie', options=titles, index=titles.index('Shutter Island') if 'Shutter Island' in titles else 0)
 with ctrl2:
@@ -229,7 +223,6 @@ if selected_title and trigger:
     if not recs:
         st.info('No recommendations found for this selection.')
     else:
-        # Minimal CSS for cards and chips
         st.markdown(
             """
             <style>
@@ -243,7 +236,6 @@ if selected_title and trigger:
             unsafe_allow_html=True,
         )
 
-        # Show up to 12 posters, 3 per row
         display_recs = recs[:30]
         num_cols = 5
         rows = [display_recs[i:i+num_cols] for i in range(0, len(display_recs), num_cols)]
@@ -251,7 +243,6 @@ if selected_title and trigger:
             cols = st.columns(len(row_titles))
             for col, title in zip(cols, row_titles):
                 info = meta_by_title.get(title, {})
-                # Look up movie_id directly from the training df
                 try:
                     movie_id_val = int(df[df['title'] == title]['movie_id'].iloc[0])
                 except Exception:
