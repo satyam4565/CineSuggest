@@ -40,5 +40,5 @@ CineSuggest is an AI-powered **movie recommendation system** built using **Machi
 
 ---
 
-## 🤝 Contributing  
+## 🤝 Contributions
 Contributions are welcome! Fork the repo, create a branch, and submit a pull request.  
