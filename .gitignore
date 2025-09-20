@@ -1,0 +1,16 @@
+.devcontainer/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Anaconda artifacts
+anaconda_project/
+db/
+
+# OS files
+.DS_Store
